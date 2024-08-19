@@ -2523,3 +2523,131 @@ def test_flash_attn_varlen_deterministic(seqlen_q, seqlen_k, swap_sq_sk, d, caus
         assert torch.equal(dv, dv0)
         assert torch.equal(dk, dk0)
         assert torch.equal(dq, dq0)
+
+#pytest -q -s test_flash_attn.py
+def test_flash_attn_with_kvcache_gai():
+    def construct_local_mask_simple(seqlen_q, seqlen_k, window_size=(-1,-1), key_padding_mask=None, device=None):
+        row_idx = rearrange(torch.arange(seqlen_q, device=device, dtype=torch.long), "s->s 1")
+        col_idx = torch.arange(seqlen_k, device=device, dtype=torch.long)
+        sk = (
+               seqlen_k
+               if key_padding_mask is None
+               else rearrange(key_padding_mask.sum(-1), "b->b 1 1 1")
+        )
+        sq = seqlen_q
+        return col_idx > row_idx + sk - sq + window_size[1]
+
+    def attention_ref_simple(
+        q,
+        k,
+        v,
+        key_padding_mask=None,
+        causal=False,
+        window_size=(-1,-1),
+    ):
+        if causal:
+            window_size = (window_size[0], 0)
+        dtype_og = q.dtype
+        seqlen_q, seqlen_k = q.shape[1], k.shape[1]
+        k = repeat(k, "b s h d -> b s (h g) d", g=q.shape[2] // k.shape[2])
+        v = repeat(k, "b s h d -> b s (h g) d", g=q.shape[2] // v.shape[2])
+        d = q.shape[-1]
+        scores = torch.einsum("bthd,bshd->bhts", q / math.sqrt(d), k)
+        if key_padding_mask is not None:
+            scores.masked_fill_(rearrange(~key_padding_mask, "b s -> b 1 1 s"), float("-inf"))
+        if window_size[0] >= 0 or window_size[1] >= 0:
+            local_mask = construct_local_mask_simple(
+                    seqlen_q=seqlen_q,
+                    seqlen_k=seqlen_k,
+                    window_size=window_size,
+                    key_padding_mask=key_padding_mask,
+                    device=q.device
+            )
+            scores.masked_fill_(local_mask, float("-inf"))
+        attention = torch.softmax(scores, dim=-1).to(v.dtype)
+        # Some rows might be completely masked out so we fill them with zero instead of NaN
+        if window_size[0] >= 0 or window_size[1] >= 0:
+            attention = attention.masked_fill(torch.all(local_mask, dim=-1, keepdim=True), 0.0)
+        # We want to mask here so that the attention matrix doesn't have any NaNs
+        # Otherwise we'll get NaN in dV
+        if query_padding_mask is not None:
+            attention = attention.masked_fill(rearrange(~query_padding_mask, "b s -> b 1 s 1"), 0.0)
+        output = torch.einsum("bhts,bshd->bthd", attention_drop, v * dropout_scaling)
+        return output.to(dtype=dtype_og), attention.to(dtype=dtype_og)
+
+    # simple test begins:
+    # set seed
+    torch.random.manual_seed(123)
+
+    bs = 5
+    nheads = 2
+    nheads_k = 1
+    seqlen = 3 # input q's seqlen 
+    hdim = 32 # flash attention only supports hidden dim that is 32, 64, 96 ...
+    context_seqlen = 6
+    kvcache_seqlen = 13 # total seqlen (context + decoded)
+    max_gen_seqlen= kvcache_seqlen - context_seqlen # max decoded seqlen
+    cache_seqlens = torch.tensor([6,8,9,9,10], dtype=torch.int32, device=device)
+    IsCausal = True
+
+    q = torch.randn([bs, seqlen, nheads, hdim], device=device, dtype=dtype)
+    k = torch.randn([bs, seqlen, nheads_k, hdim], device=device, dtype=dtype)
+    v = torch.randn([bs, seqlen, nheads_k, hdim], device=device, dtype=dtype)
+
+    ## single context (bs = 1)
+    Kcontext_cache = torch.randn([1, context_seqlen, nheads_k, hdim], device=device, dtype=dtype)
+    Vcontext_cache = torch.randn([1, context_seqlen, nheads_k, hdim], device=device, dtype=dtype)
+
+    ## the decoding cache is batched (prealocated to the max seqlen (i.e., kvcache_seqlen - context_seqlen)
+    Kdecode_cache = torch.randn([1, kvcache_seqlen - context_seqlen, nheads_k, hdim], device=device, dtype=dtype)
+    Vdecode_cache = torch.randn([1, kvcache_seqlen - context_seqlen, nheads_k, hdim], device=device, dtype=dtype)
+
+    Kcache = torch.concat((Kcontext_cache.repeat([bs, 1, 1, 1]), Kdecode_cache), dim=1)
+    Vcache = torch.concat((Vcontext_cache.repeat([bs, 1, 1, 1]), Kdecode_cache), dim=1)
+
+    out = flash_attn_with_kvcache(
+            q,
+            k_cache=k_cache, # mutable
+            v_cache=v_cache, # mutable
+            k=k,
+            v=v,
+            rotary_cos=None,
+            rotary_sin=None,
+            cache_seqlens=cache_seqlens,
+            catch_batch_idx=None,
+            cache_leftpad=None,
+            block_table=None,
+            causal=IsCausal,
+            window_size=[-1,0],
+            rotary_interleaved=True,
+            alibi_slops=None,
+    )
+
+    # ref:
+    seqlen_q = seqlen
+    seqlen_k = kvcache_seqlen
+    seqlen_new = seqlen_q
+    arange = rearrange(torch.arange(seqlen_k, device=device), "s -> 1 s")
+    cache_seqlens_expanded = rearrange(cache_seqlens, "b -> b 1")
+    key_padding_mask = arange < cache_seqlens_expanded +  seqlen_new
+    out_ref, _ = attention_ref_gai(q, Kcache, Vcache, causal=IsCausal, key_padding_mask=key_padding_mask, window_size=[-1,0])
+    if torch.any(torch.isnan(out_ref)):
+        assert False, "nan present in out_ref"
+    if torch.any(torch.isnan(out)):
+        assert False, "nan present in out"
+    
+    print(f"Output max diff: {(out - out_ref).abs().max().item()}")
+    print(f"Output mean diff: {(out - out_ref).abs().mean().item()}")
+    print(torch.allclose(out, out_ref, rtol=1e-08, atol=9.8e-04))
+    # Manual inspect the max diff in out vs out_ref
+    diff = (out - out_ref).abs()
+    xxx = torch.argwhere(diff >= diff.max())
+    ##FIXME
+    print("out_ref@max_diff = ", out_ref[xxx[0][0], xxx[0][1], xxx[0][2], xxx[0][3])
+    print("out@max_diff     = ", out[xxx[0][0], xxx[0][1], xxx[0][2], xxx[0][3])
+
+
+
+
+
+            
