@@ -13,7 +13,7 @@ from flash_attn.utils.benchmark import benchmark_all, benchmark_forward, benchma
 from flash_attn.utils.benchmark import benchmark_fwd_bwd, benchmark_combined
 
 from flash_attn import flash_attn_qkvpacked_func
-from flash_attn_interface import flash_attn_func
+from flash_attn_interface import flash_attn_func, _flash_attn_forward
 
 try:
     from triton_fused_attention import attention as attention_triton
@@ -44,7 +44,7 @@ def convert_to_cudnn_type(torch_type):
         return cudnn.data_type.INT64
     elif torch_type == torch.float8_e4m3fn:
         return cudnn.data_type.FP8_E4M3
-    elif torch_type == torch.float8_e4m3fn:
+    elif torch_type == torch.float8_e5m2:
         return cudnn.data_type.FP8_E5M2
     else:
         raise ValueError("Unsupported tensor data type.")
@@ -219,17 +219,18 @@ device = 'cuda'
 # dtype = torch.float16
 dtype = torch.float8_e4m3fn
 
-bs_seqlen_vals = [(32, 512), (16, 1024), (8, 2048), (4, 4224), (2, 8448), (1, 8448 * 2)]
-# bs_seqlen_vals = [(32, 512), (16, 1024), (8, 2048), (4, 4096), (2, 8192), (1, 8192 * 2)]
-# bs_seqlen_vals = [(4, 4096), (2, 8192), (1, 8192 * 2), (4, 4224), (2, 8448), (1, 8448 * 2)]
+# bs_seqlen_vals = [(32, 512), (16, 1024), (8, 2048), (4, 4224), (2, 8448), (1, 8448 * 2)]
+bs_seqlen_vals = [(32, 512), (16, 1024), (8, 2048), (4, 4096), (2, 8192), (1, 8192 * 2)]
+# bs_seqlen_vals = [(4, 4096), (2, 8192), (1, 8192 * 2)]
 # bs_seqlen_vals = [(32, 512), (16, 1024), (8, 2048)]
 causal_vals = [False, True]
-headdim_vals = [128]
+headdim_vals = [64, 128, 256]
 dim = 2048
 # dim = 256
 dropout_p = 0.0
 
-methods = (["Pytorch", "Flash3", "cuDNN"]        
+methods = (["Pytorch", "Flash3"]
+        + (["cuDNN"] if cudnn is not None else [])
         # + (["Triton"] if attention_triton is not None else [])
         #    + (["xformers.c"] if xops is not None else [])
         #    + (["xformers.f"] if xops is not None else [])
@@ -247,10 +248,10 @@ for causal in causal_vals:
             torch.cuda.empty_cache()
             config = (causal, headdim, batch_size, seqlen)
             nheads = dim // headdim
-            q, k, v = [torch.randn(batch_size, seqlen, nheads, headdim, device=device, dtype=torch.float16, requires_grad=False) for _ in range(3)]
+            q, k, v = [torch.randn(batch_size, seqlen, nheads, headdim, device=device, dtype=torch.bfloat16, requires_grad=False) for _ in range(3)]
             
             qkv = torch.stack([q, k, v], dim=2)
-            qkv = qkv.to(torch.float16)
+            qkv = qkv.to(torch.bfloat16)
             f = time_fwd(attention_pytorch, qkv, dropout_p, causal=causal, repeats=repeats, verbose=False)
             time_f[config, "Pytorch"] = f
             res_baseline = attention_pytorch(qkv, dropout_p, causal=causal)
@@ -276,8 +277,27 @@ for causal in causal_vals:
                 torch.testing.assert_close(res, res_baseline, atol=0.5, rtol=0.5)
 
             # out = torch.empty_like(q)
-            q, k, v = q.to(dtype), k.to(dtype), v.to(dtype)                        
-            f = time_fwd(flash_attn_func, q, k, v, causal=causal, repeats=repeats, verbose=False)
+            q, k, v = q.to(dtype), k.to(dtype), v.to(dtype)
+            softmax_scale = q.shape[-1] ** (-0.5)
+            descale_q = torch.tensor([1.0], dtype=torch.float32, device='cuda')
+            descale_k = torch.tensor([1.0], dtype=torch.float32, device='cuda')
+            descale_v = torch.tensor([1.0], dtype=torch.float32, device='cuda')
+
+            # f = time_fwd(flash_attn_func, q, k, v, causal=causal, repeats=repeats, verbose=False)
+            f = time_fwd(
+                _flash_attn_forward,
+                q, 
+                k, 
+                v, 
+                softmax_scale, 
+                causal=causal,
+                window_size=(-1,-1),
+                descale_q=descale_q, 
+                descale_k=descale_k, 
+                descale_v=descale_v, 
+                repeats=repeats, 
+                verbose=False
+            )
 
             # res = flash_attn_func(q, k, v, causal=causal)
             # torch.testing.assert_close(res.half(), res_baseline, atol=0.05, rtol=0.05)
