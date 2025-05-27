@@ -431,7 +431,7 @@ inline __device__ void compute_attn_1rowblock_splitkv_bifurcated(const Params &p
                                        binfo.actual_seqlen_k_cache_context - n_block * kBlockN);
   } else {
     // use decoded block
-    flash::copy<Is_even_MN, Is_even_K>(gmem_tiled_copy_QKV, tKgKcontext, tKsK, tKVcKV, tKVpKV,
+    flash::copy<Is_even_MN, Is_even_K>(gmem_tiled_copy_QKV, tKgKdecoded, tKsK, tKVcKV, tKVpKV,
                                        binfo.actual_seqlen_k_cache_decoded + actual_n_block_max_context * kBlockN - n_block * kBlockN);
   }
   cute::cp_async_fence();
@@ -766,7 +766,7 @@ inline __device__ void compute_attn_1rowblock_splitkv_bifurcated(const Params &p
                     tKgK.data() = tKgK.data() + (block_table[block_table_idx_next] - block_table[block_table_idx_cur]) * params.k_batch_stride + (block_table_offset_next - block_table_offset_cur) * params.k_row_stride;
 #endif
                 }
-              flash::copy</*Is_even_MN=*/true, Is_even_K>(gmem_tiled_copy_QKV, tKgKdecoded, tKsK, tKVcKV, tKVpKV);
+                flash::copy</*Is_even_MN=*/true, Is_even_K>(gmem_tiled_copy_QKV, tKgKdecoded, tKsK, tKVcKV, tKVpKV);
             }  else {
               // transition from the decoded part to the context part
 #if 1
