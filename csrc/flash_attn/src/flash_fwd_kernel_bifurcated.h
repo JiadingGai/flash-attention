@@ -31,6 +31,9 @@ inline __device__ void compute_attn_1rowblock_splitkv_bifurcated(const Params &p
 
   // Shared memory
   extern __shared__ char smem_[];
+  
+  // The thread index
+  const int tidx = threadIdx.x;
 
   constexpr int kBlockM = Kernel_traits::kBlockM;
   constexpr int kBlockN = Kernel_traits::kBlockN;
@@ -122,7 +125,7 @@ inline __device__ void compute_attn_1rowblock_splitkv_bifurcated(const Params &p
      Tensor tOrOaccum = make_tensor<ElementO>(shape(tOgOaccum));
      clear(tOrOaccum);
      // Construct identity layout for sO
-     Tensor cO = make_identity_tensor(make_shape(<size<0>(gOaccum), size<1>(gOaccum))); // (BLK_M, BLK_K) -> (blk_m, blk_k)
+     Tensor cO = make_identity_tensor(make_shape(size<0>(gOaccum), size<1>(gOaccum))); // (BLK_M, BLK_K) -> (blk_m, blk_k)
      // Repeat the partitioning with identity layouts
      Tensor tOcO = gmem_thr_copy_Oaccum.partition_D(cO);
      Tensor tOpO = make_tensor<bool>(make_shape(size<2>(tOgOaccum)));
@@ -177,13 +180,13 @@ inline __device__ void compute_attn_1rowblock_splitkv_bifurcated(const Params &p
   Tensor gQ = local_tile(mQ(_, bidh, _), Shape<Int<kBlockM>, Int<kHeadDim>>{},
                          make_coord(m_block, 0)); // (kBlockM, kHeadDim)
 
-  Tensor gKContext = make_tensor(make_gmem_ptr(reinterpret_cast<Element *>(params.kcontext_ptr) + row_offset_kcontext),
+  Tensor gKcontext = make_tensor(make_gmem_ptr(reinterpret_cast<Element *>(params.kcontext_ptr) + row_offset_kcontext),
                                                Shape<Int<kBlockN>, Int<kHeadDim>>{},
                                                make_stride(params.kcontext_row_stride, _1{}));
   Tensor gKdecoded = make_tensor(make_gmem_ptr(reinterpret_cast<Element *>(params.kdecoded_ptr) + row_offset_kdecoded),
                                                Shape<Int<kBlockN>, Int<kHeadDim>>{},
                                                make_stride(params.kdecoded_row_stride, _1{}));
-  Tensor gVContext = make_tensor(make_gmem_ptr(reinterpret_cast<Element *>(params.vcontext_ptr) + row_offset_vcontext),
+  Tensor gVcontext = make_tensor(make_gmem_ptr(reinterpret_cast<Element *>(params.vcontext_ptr) + row_offset_vcontext),
                                                Shape<Int<kBlockN>, Int<kHeadDim>>{},
                                                make_stride(params.vcontext_row_stride, _1{}));
   Tensor gVdecoded = make_tensor(make_gmem_ptr(reinterpret_cast<Element *>(params.vdecoded_ptr) + row_offset_vdecoded),
@@ -227,9 +230,9 @@ inline __device__ void compute_attn_1rowblock_splitkv_bifurcated(const Params &p
 
   auto smem_tiled_copy_K = make_tiled_copy_B(typename Kernel_traits::SmemCopyAtom{}, tiled_mma);
   auto smem_thr_copy_K = smem_tiled_copy_K.get_thread_slice(tidx);
-  Tensor tSsK = smem_thr_copy_Q.partition_S(sK);
+  Tensor tSsK = smem_thr_copy_K.partition_S(sK);
 
-  auto smem_tiled_copy_V = make_tiled_copy_B(typename Kernel_traits::SmemCopyAtom{}, tiled_mma);
+  auto smem_tiled_copy_V = make_tiled_copy_B(typename Kernel_traits::SmemCopyAtomTransposed{}, tiled_mma);
   auto smem_thr_copy_V = smem_tiled_copy_V.get_thread_slice(tidx);
   Tensor tOsVt = smem_thr_copy_V.partition_S(sVt);
 
@@ -327,7 +330,7 @@ inline __device__ void compute_attn_1rowblock_splitkv_bifurcated(const Params &p
           tVgVnew.data() = tVgVnew.data() + (-int(kBlockN * params.vnew_row_stride));
           if (params.rotary_dim == 0) {
               FLASH_NAMESPACE::copy_w_min_idx<Is_even_K>(
-                  tKgKnew, tKgK, tKVcKV, tKVpKV,
+                  tKgKnew, tKgKdecoded, tKVcKV, tKVpKV,
                   actual_n_block_max_context * kBlockN + binfo.actual_seqlen_k_cache_decoded - n_block * kBlockN,
                   actual_n_block_max_context * kBlockN + binfo.seqlen_k_cache_decoded - n_block * kBlockN
               );
@@ -335,7 +338,7 @@ inline __device__ void compute_attn_1rowblock_splitkv_bifurcated(const Params &p
               if (params.is_rotary_interleaved) {
                   // Don't clear OOB_K because we're writing to global memory
                   FLASH_NAMESPACE::copy_rotary_interleaved<Is_even_K, /*Clear_OOB_K=*/false>(
-                      tKgKnew, tKgK, tRgCos, tRgSin, tKVcKV,
+                      tKgKnew, tKgKdecoded, tRgCos, tRgSin, tKVcKV,
                       actual_n_block_max_context * kBlockN + binfo.actual_seqlen_k_cache_decoded - n_block * kBlockN,
                       actual_n_block_max_context * kBlockN + binfo.seqlen_k_cache_decoded - n_block * kBlockN,
                       params.d, params.rotary_dim
@@ -446,7 +449,7 @@ inline __device__ void compute_attn_1rowblock_splitkv_bifurcated(const Params &p
 
   //FIXME (GJD): fix up masking
   flash::Mask<Is_causal, Is_local, Has_alibi> mask(binfo.actual_seqlen_k_cache_decoded + actual_n_block_max_context * kBlockN, binfo.actual_seqlen_q, params.window_size_left, params.window_size_right, alibi_slope);
-  flash::Mask</*Is_causal*/false, /*Is_local*/false, /*Has_alibi*/false> mask_context(binfo.seqlen_k_cache_context, binfo.actual_seqlen_q, params.window_size_left, params.window_size_right, alibi_slop);
+  flash::Mask</*Is_causal*/false, /*Is_local*/false, /*Has_alibi*/false> mask_context(binfo.seqlen_k_cache_context, binfo.actual_seqlen_q, params.window_size_left, params.window_size_right, alibi_slope);
 
   // For performance reason, we separate out two kinds of iterations:
   // those that need masking on S, and those that don't.
@@ -456,7 +459,7 @@ inline __device__ void compute_attn_1rowblock_splitkv_bifurcated(const Params &p
 
   // If not even_N, then seqlen_k might end in the middle of a block. In that case we need to
   // mask 2 blocks (e.g. when kBlockM == kBlockN), not just 1.
-  constexpr int n_masking_steps = (!Is_causal && !Is_local)
+  int n_masking_steps = (!Is_causal && !Is_local)
       ? 1
       : ((Is_even_MN && Is_causal) ? cute::ceil_div(kBlockM, kBlockN) : cute::ceil_div(kBlockM, kBlockN) + 1);
 
@@ -512,7 +515,7 @@ inline __device__ void compute_attn_1rowblock_splitkv_bifurcated(const Params &p
       if (n_block > actual_n_block_max_context) {
         // Advance gK
         if (block_table == nullptr) {
-          tKgKdecoded.data() = tKgKdecoded.data() + (-int(kBlockN * params.kdecoded_row_strided));
+          tKgKdecoded.data() = tKgKdecoded.data() + (-int(kBlockN * params.kdecoded_row_stride));
         } else {
 #ifndef BIFURCATED_ATTENTION_DISABLE_UNSUPPORTED_CODE
           const int block_table_idx_cur = n_block * kBlockN / params.page_block_size;
@@ -560,7 +563,7 @@ inline __device__ void compute_attn_1rowblock_splitkv_bifurcated(const Params &p
       Tensor acc_s = partition_fragment_C(tiled_mma, Shape<Int<kBlockM>, Int<kBlockN>>{}); // (MMA=4, MMA_M, MMA_N)
       clear(acc_s);
       flash::cp_async_wait<0>();
-      __synchthreads();
+      __syncthreads();
 
       // if (threadIdx.x == 0 && blockIdx.x == 0 && blockIdx.y == 1 && blockIdx.z == 2) {
       //   printf("[masking step] visiting n_block = %d, actual_n_block_max_context = %d, kBlockN = %d, n_masking_steps = %d\n", n_block, actual_n_block_max_context, kBlockN, n_masking_steps);
@@ -603,7 +606,7 @@ inline __device__ void compute_attn_1rowblock_splitkv_bifurcated(const Params &p
 #endif
 
       flash::gemm(
-          acc_s, tSrQ, tSrK, tSsQ, tiled_mma, smem_tiled_copy_Q, smem_tiled_copy_K,
+          acc_s, tSrQ, tSrK, tSsQ, tSsK, tiled_mma, smem_tiled_copy_Q, smem_tiled_copy_K,
           smem_thr_copy_Q, smem_thr_copy_K
       );
       // if (cute::thread0()) { print(acc_s); }
