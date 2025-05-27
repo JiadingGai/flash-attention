@@ -476,10 +476,10 @@ inline __device__ void compute_attn_1rowblock_splitkv_bifurcated(const Params &p
       flash::copy<Is_even_MN, Is_even_K, /*Clear_OOB_MN*/true>(
 #else
       flash::copy</*Is_even_MN*/true, Is_even_K>(
+#endif
         gmem_tiled_copy_QKV, tVgVcontext, tVsV, tKVcKV, tKVpKV,
         binfo.actual_seqlen_k_cache_context - n_block * kBlockN
       );
-#endif
     } else if (n_block < (actual_n_block_max_context - 1)) {
       if (block_table == nullptr) {
           tVgVcontext.data() = tVgVcontext.data() + (-int(kBlockN * params.v_row_stride));
