@@ -6,6 +6,7 @@
 #include "namespace_config.h"
 
 #include <cute/tensor.hpp>
+#include "bifurcated_utils.h"
 
 namespace FLASH_NAMESPACE {
 
@@ -157,7 +158,12 @@ struct Mask {
                                 tensor(mi, make_coord(j, nj)) += alibi_slope * col_idx;
                             }
                             if constexpr (!Is_even_MN) {
-                                if (col_idx >= max_seqlen_k) { tensor(mi, make_coord(j, nj)) = -INFINITY; }
+                                if (col_idx >= max_seqlen_k) { 
+                                           //if (blockIdx.x == 0 && blockIdx.y == 1 && blockIdx.z == 2) {
+                                           //  printf("(flash::mask1) tx=%d, lane_id=%d, col_idx_offset_=%d, col_idx=%d, max_seqlen_k=%d\n", threadIdx.x, lane_id, col_idx_offset_, col_idx, max_seqlen_k);
+                                           //}
+                                  tensor(mi, make_coord(j, nj)) = -INFINITY; 
+                                }
                             }
                         }
                     }
@@ -187,6 +193,9 @@ struct Mask {
                                 }
                                 if constexpr (Causal_mask) {
                                     if (col_idx >= col_idx_limit_right) {
+                                        /* if (blockIdx.x == 0 && blockIdx.y == 1 && blockIdx.z == 2) { */
+                                        /*   printf("(flash::mask0) tx=%d, col_idx=%d, col_idx_limit_right=%d, col_idx_offset_=%d, row_idx_offset=%d, warp_row_stride=%d, max_seqlen_k=%d\n", threadIdx.x, col_idx, col_idx_limit_right, col_idx_offset_, row_idx_offset, warp_row_stride, max_seqlen_k); */
+                                        /* } */
                                         tensor(make_coord(i, mi), make_coord(j, nj)) = -INFINITY;
                                     }
                                 }

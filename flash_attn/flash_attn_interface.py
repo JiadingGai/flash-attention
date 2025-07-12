@@ -1463,13 +1463,19 @@ def flash_attn_varlen_func(
 
 def flash_attn_with_kvcache(
     q,
-    k_cache,
-    v_cache,
+    k_cache=None,
+    v_cache=None,
+    k_cache_decoded=None,
+    v_cache_decoded=None,
+    k_cache_context=None,
+    v_cache_context=None,
     k=None,
     v=None,
     rotary_cos=None,
     rotary_sin=None,
     cache_seqlens: Optional[Union[(int, torch.Tensor)]] = None,
+    cache_seqlens_context: Optional[Union[(int, torch.Tensor)]] = None,
+    cache_seqlens_decoded: Optional[Union[(int, torch.Tensor)]] = None,
     cache_batch_idx: Optional[torch.Tensor] = None,
     cache_leftpad: Optional[torch.Tensor] = None,
     block_table: Optional[torch.Tensor] = None,
@@ -1481,6 +1487,7 @@ def flash_attn_with_kvcache(
     alibi_slopes=None,
     num_splits=0,
     return_softmax_lse=False,
+    use_bifurcated_attention=False,
 ):
     """
     If k and v are not None, k_cache and v_cache will be updated *inplace* with the new values from
@@ -1539,6 +1546,10 @@ def flash_attn_with_kvcache(
         rotary_sin [optional]: (seqlen_ro, rotary_dim / 2). Similar to rotary_cos.
         cache_seqlens: int, or (batch_size,), dtype torch.int32. The sequence lengths of the
             KV cache.
+        cache_seqlens_context: int, or (batch_size,), dtype torch.int32. The actual sequence lengths of the
+            KV context cache.
+        cache_seqlens_decoded: int, or (batch_size,), dtype torch.int32. The actual sequence lengths of the
+            KV decoded cache.
         cache_batch_idx: (batch_size,), dtype torch.int32. The indices used to index into the KV cache.
             If None, we assume that the batch indices are [0, 1, 2, ..., batch_size - 1].
             If the indices are not distinct, and k and v are provided, the values updated in the cache
@@ -1562,6 +1573,7 @@ def flash_attn_with_kvcache(
            to automatically determine the number of splits.
            Don't change this unless you know what you are doing.
         return_softmax_lse: bool. Whether to return the logsumexp of the attention scores.
+        use_bifurcated_attention: bool. Whether to use bifurcated+flash attention.
 
     Return:
         out: (batch_size, seqlen, nheads, headdim).
@@ -1569,18 +1581,65 @@ def flash_attn_with_kvcache(
             logsumexp of each row of the matrix QK^T * scaling (e.g., log of the softmax
             normalization factor).
     """
-    assert k_cache.stride(-1) == 1, "k_cache must have contiguous last dimension"
-    assert v_cache.stride(-1) == 1, "v_cache must have contiguous last dimension"
+    if not use_bifurcated_attention:
+        assert k_cache.stride(-1) == 1, "k_cache must have contiguous last dimension"
+        assert v_cache.stride(-1) == 1, "v_cache must have contiguous last dimension"
     q, k, v = [maybe_contiguous(x) for x in (q, k, v)]
     if softmax_scale is None:
         softmax_scale = q.shape[-1] ** (-0.5)
+
+    # FIXME(jiadingg): remove the following cache_seqlens if-block 
     if cache_seqlens is not None and isinstance(cache_seqlens, int):
         cache_seqlens = torch.full(
             (k_cache.shape[0],), cache_seqlens, dtype=torch.int32, device=k_cache.device
         )
         cache_seqlens = maybe_contiguous(cache_seqlens)
+
+    if cache_seqlens_context is not None and isinstance(cache_seqlens_context, int):
+        cache_seqlens_context = torch.full(
+            (q.shape[0],), cache_seqlens_context, dtype=torch.int32, device=q.device
+        )
+        cache_seqlens_context = maybe_contiguous(cache_seqlens_context)
+
+    if cache_seqlens_decoded is not None and isinstance(cache_seqlens_decoded, int):
+        cache_seqlens_decoded = torch.full(
+            (q.shape[0],), cache_seqlens_decoded, dtype=torch.int32, device=q.device
+        )
+        cache_seqlens_decoded = maybe_contiguous(cache_seqlens_decoded)
+
     cache_batch_idx = maybe_contiguous(cache_batch_idx)
     block_table = maybe_contiguous(block_table)
+
+    if use_bifurcated_attention:
+        out, softmax_lse = flash_attn_gpu.fwd_kvcache_bifurcated(
+            q,
+            k_cache_decoded,
+            v_cache_decoded,
+            k_cache_context,
+            v_cache_context,
+            k,
+            v,
+            cache_seqlens,
+            cache_seqlens_context,
+            cache_seqlens_decoded,
+            rotary_cos,
+            rotary_sin,
+            cache_batch_idx,
+            cache_leftpad,
+            block_table,
+            alibi_slopes,
+            None,
+            softmax_scale,
+            causal,
+            window_size[0],
+            window_size[1],
+            softcap,
+            rotary_interleaved,
+            num_splits,
+            use_bifurcated_attention,
+        )
+        return (out, softmax_lse) if return_softmax_lse else out
+
     out, softmax_lse = flash_attn_gpu.fwd_kvcache(
         q,
         k_cache,

@@ -44,6 +44,11 @@ __forceinline__ __device__ void copy_rotary_interleaved(Tensor<Engine0, Layout0>
     Tensor rS = make_fragment_like(S);
     #pragma unroll
     for (int m = 0; m < size<1>(S); ++m) {
+                   /* sleep((int64_t)(6 * 10000000ULL)); */
+                   /* if (blockIdx.x == 0 && blockIdx.y == 4 && blockIdx.z == 37 && min_MN==110 && max_MN==117) { */
+                   /*   printf("tidx=%d, m=%d, get<0>(identity_MN(0, m, 0))=%d, min_MN=%d, max_MN=%d\n", threadIdx.x, m, get<0>(identity_MN(0, m, 0)), min_MN, max_MN); */
+                   /* } */
+                   /* sleep((int64_t)(6 * 10000000ULL)); */
         if (get<0>(identity_MN(0, m, 0)) >= min_MN && get<0>(identity_MN(0, m, 0)) < max_MN) {
             #pragma unroll
             for (int k = 0; k < size<2>(S); ++k) {

@@ -20,6 +20,8 @@
 #include "mask.h"
 #include "dropout.h"
 #include "rotary.h"
+#include "bifurcated_utils.h"
+#include "flash_fwd_kernel_bifurcated.h"
 
 namespace FLASH_NAMESPACE {
 
@@ -521,6 +523,9 @@ inline __device__ void compute_attn_1rowblock_splitkv(const Params &params, cons
     using ElementO = std::conditional_t<!Split, Element, ElementAccum>;
 
     const BlockInfo</*Varlen=*/!Is_even_MN> binfo(params, bidb);
+    //if (threadIdx.x == 0) {
+    //   printf("block (%d,%d,%d): seqlen_k_cache = %d, actual_seqlen_k = %d\n", blockIdx.x, blockIdx.y, blockIdx.z, binfo.seqlen_k_cache, binfo.actual_seqlen_k);
+    //}
     // if (threadIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0) { printf("Is_even_MN = %d, is_cumulativ = %d, seqlen_k_cache = %d, actual_seqlen_k = %d\n", Is_even_MN, params.is_seqlens_k_cumulative, binfo.seqlen_k_cache, binfo.actual_seqlen_k); }
     // if (threadIdx.x == 0 && blockIdx.y == 1 && blockIdx.z == 0) { printf("params.knew_ptr = %p, seqlen_k_cache + seqlen_knew = %d\n", params.knew_ptr, binfo.seqlen_k_cache + (params.knew_ptr == nullptr ? 0 : params.seqlen_knew)); }
     if (m_block * kBlockM >= binfo.actual_seqlen_q) return;
@@ -601,7 +606,10 @@ inline __device__ void compute_attn_1rowblock_splitkv(const Params &params, cons
     Tensor gK = make_tensor(make_gmem_ptr(reinterpret_cast<Element *>(params.k_ptr) + row_offset_k),
                             Shape<Int<kBlockN>, Int<kHeadDim>>{},
                             make_stride(params.k_row_stride, _1{}));
-    // if (threadIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0) { printf("k_ptr = %p, row_offset_k = %d, gK_ptr = %p\n", params.k_ptr, row_offset_k, gK.data()); }
+    if (threadIdx.x == 0 && threadIdx.y == 0 && threadIdx.z ==0) {
+      /* printf("row_offset_k=%d, row_offset_v=%d, block ids = (%d,%d,%d), thread ids = (%d,%d,%d)\n", row_offset_k, row_offset_v, blockIdx.x, blockIdx.y, blockIdx.z, threadIdx.x, threadIdx.y, threadIdx.z); */
+    }
+    /* if (threadIdx.x == 0 && blockIdx.y == 0 && blockIdx.z == 0) { printf("k_ptr = %p, row_offset_k = %d, gK_ptr = %p\n", params.k_ptr, row_offset_k, gK.data()); } */
     Tensor gV = make_tensor(make_gmem_ptr(reinterpret_cast<Element *>(params.v_ptr) + row_offset_v),
                             Shape<Int<kBlockN>, Int<kHeadDim>>{},
                             make_stride(params.v_row_stride, _1{}));
@@ -880,7 +888,7 @@ inline __device__ void compute_attn_1rowblock_splitkv(const Params &params, cons
             acc_s, tSrQ, tSrK, tSsQ, tSsK, tiled_mma, smem_tiled_copy_Q, smem_tiled_copy_K,
             smem_thr_copy_Q, smem_thr_copy_K
         );
-        // if (cute::thread0()) { print(acc_s); }
+        /* if (cute::thread0()) { print(acc_s); } */
         if constexpr (Is_softcap){
             FLASH_NAMESPACE::apply_softcap(acc_s, params.softcap);
         }
@@ -995,7 +1003,9 @@ inline __device__ void compute_attn_1rowblock_splitkv(const Params &params, cons
     // Epilogue
 
     Tensor lse = softmax.template normalize_softmax_lse</*Is_dropout=*/false, Split>(acc_o, params.scale_softmax);
-    // if (cute::thread0()) { print(lse); }
+#ifdef BIFURCATED_ATTENTION_DEBUG
+    if (cute::thread0()) { print(lse); printf("\ncompute_attn_1rowblock_splitkv\n"); }
+#endif
 
     Tensor sOaccum = make_tensor(make_smem_ptr(reinterpret_cast<ElementO *>(smem_)), typename Kernel_traits::SmemLayoutO{}); // (SMEM_M,SMEM_N)
     // Partition sO to match the accumulator partitioning
@@ -1102,7 +1112,11 @@ inline __device__ void compute_attn_splitkv(const Params &params) {
     const int bidh = Split ? blockIdx.z - bidb * params.h : blockIdx.z;
     const int n_split_idx = Split ? blockIdx.y : 0;
     const int num_n_splits = Split ? gridDim.y : 1;
-    FLASH_NAMESPACE::compute_attn_1rowblock_splitkv<Kernel_traits, Is_causal, Is_local, Has_alibi, Is_even_MN, Is_even_K, Is_softcap, Split, Append_KV>(params, bidb, bidh, m_block, n_split_idx, num_n_splits);
+    if (params.use_bifurcated_attention) {
+      FLASH_NAMESPACE::compute_attn_1rowblock_splitkv_bifurcated<Kernel_traits, Is_causal, Is_local, Has_alibi, Is_even_MN, Is_even_K, Is_softcap, Split, Append_KV>(params, bidb, bidh, m_block, n_split_idx, num_n_splits);
+    } else {
+      FLASH_NAMESPACE::compute_attn_1rowblock_splitkv<Kernel_traits, Is_causal, Is_local, Has_alibi, Is_even_MN, Is_even_K, Is_softcap, Split, Append_KV>(params, bidb, bidh, m_block, n_split_idx, num_n_splits);
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

@@ -195,6 +195,13 @@ if not SKIP_CUDA_BUILD and not IS_ROCM:
     # https://github.com/pytorch/pytorch/blob/8472c24e3b5b60150096486616d98b7bea01500b/torch/utils/cpp_extension.py#L920
     if FORCE_CXX11_ABI:
         torch._C._GLIBCXX_USE_CXX11_ABI = True
+
+    # Bifurcated attention compilation control flags:
+    # BIFURCATED_ATTENTION_DISABLE_UNSUPPORTED: disables code sections that are supported yet.
+    # BIFURCATED_ATTENTION_DEBUG: turn on debug print.
+    # BIFURCATED_ATTENTION_PARAMETER_TUNING: turn on kernel parameter tuning.
+    bifurcated_attention_flags = ["-DBIFURCATED_ATTENTION_DISABLE_UNSUPPORTED_CODE",]
+    #bifurcated_attention_flags += ["-DBIFURCATED_ATTENTION_DEBUG", "-DBIFURCATED_ATTENTION_PARAMETER_TUNING"]
     ext_modules.append(
         CUDAExtension(
             name="flash_attn_2_cuda",
@@ -274,7 +281,7 @@ if not SKIP_CUDA_BUILD and not IS_ROCM:
                 "csrc/flash_attn/src/flash_fwd_split_hdim256_bf16_causal_sm80.cu",
             ],
             extra_compile_args={
-                "cxx": ["-O3", "-std=c++17"],
+                "cxx": ["-O3", "-std=c++17"] + bifurcated_attention_flags,
                 "nvcc": append_nvcc_threads(
                     [
                         "-O3",
@@ -286,23 +293,26 @@ if not SKIP_CUDA_BUILD and not IS_ROCM:
                         "--expt-relaxed-constexpr",
                         "--expt-extended-lambda",
                         "--use_fast_math",
+                        #"--keep",
+                        #"--verbose",
                         # "--ptxas-options=-v",
                         # "--ptxas-options=-O2",
                         # "-lineinfo",
-                        # "-DFLASHATTENTION_DISABLE_BACKWARD",
-                        # "-DFLASHATTENTION_DISABLE_DROPOUT",
-                        # "-DFLASHATTENTION_DISABLE_ALIBI",
-                        # "-DFLASHATTENTION_DISABLE_SOFTCAP",
-                        # "-DFLASHATTENTION_DISABLE_UNEVEN_K",
-                        # "-DFLASHATTENTION_DISABLE_LOCAL",
+                        "-DFLASHATTENTION_DISABLE_BACKWARD",
+                        "-DFLASHATTENTION_DISABLE_DROPOUT",
+                        "-DFLASHATTENTION_DISABLE_ALIBI",
+                        "-DFLASHATTENTION_DISABLE_SOFTCAP",
+                        "-DFLASHATTENTION_DISABLE_UNEVEN_K",
+                        "-DFLASHATTENTION_DISABLE_LOCAL",
                     ]
                     + cc_flag
+                    + bifurcated_attention_flags,
                 ),
             },
             include_dirs=[
                 Path(this_dir) / "csrc" / "flash_attn",
                 Path(this_dir) / "csrc" / "flash_attn" / "src",
-                Path(this_dir) / "csrc" / "cutlass" / "include",
+                Path(os.environ["CUTLASS_ROOT_DIR"]) / "include",
             ],
         )
     )

@@ -40,6 +40,9 @@ DEFINE_FLASH_FORWARD_KERNEL(flash_fwd_kernel, bool Is_dropout, bool Is_causal, b
 
 DEFINE_FLASH_FORWARD_KERNEL(flash_fwd_splitkv_kernel, bool Is_causal, bool Is_local, bool Has_alibi, bool Is_even_MN, bool Is_even_K, bool Is_softcap, bool Split, bool Append_KV) {
     #if defined(ARCH_SUPPORTS_FLASH)
+        /* printf("grid dim = (%d,%d,%d), block dim = (%d,%d,%d), thread ids = (%d,%d,%d)\n", gridDim.x, gridDim.y, gridDim.z, blockDim.x, blockDim.y, blockDim.z, threadIdx.x, threadIdx.y, threadIdx.z); */
+        /* printf("params.k_row_stride=%d\n", params.k_row_stride); */
+        /* printf("thread ids = (%d,%d,%d)\n", threadIdx.x, threadIdx.y, threadIdx.z); */
         FLASH_NAMESPACE::compute_attn_splitkv<Kernel_traits, Is_causal, Is_local, Has_alibi, Is_even_MN, Is_even_K, Is_softcap, Split, Append_KV>(params);
     #else
         FLASH_UNSUPPORTED_ARCH
@@ -124,6 +127,9 @@ void run_flash_splitkv_fwd(Flash_fwd_params &params, cudaStream_t stream) {
                                     C10_CUDA_CHECK(cudaFuncSetAttribute(
                                         kernel, cudaFuncAttributeMaxDynamicSharedMemorySize, smem_size));
                                 }
+#ifdef BIFURCATED_ATTENTION_DEBUG
+                                std::cout << "(BIFURCATEDATTENTION)(launch_config) grid = " << grid << "; block = " << Kernel_traits::kNThreads << std::endl;
+#endif
                                 kernel<<<grid, Kernel_traits::kNThreads, smem_size, stream>>>(params);
                                 C10_CUDA_KERNEL_LAUNCH_CHECK();
                             });
@@ -165,8 +171,21 @@ void run_mha_fwd_splitkv_dispatch(Flash_fwd_params &params, cudaStream_t stream)
     constexpr static int kBlockM = 64;  // Fixed for all head dimensions
     // TD [2023-08-28]: nvcc segfaults for headdim 96 with block size 64 x 256,
     // and for headdim 192 with block size 64 x 128.
+    // Also for headdim 160 with block size 64 x 128 after the rotary addition.
+#ifdef BIFURCATED_ATTENTION_PARAMETER_TUNING
+    BOOL_SWITCH(params.use_bifurcated_attention, Is_bifurcated, [&] {
+        if constexpr(Is_bifurcated) {
+          // (TODO): kBlockN == 64 performs better on A10G, worse on A100.
+          run_flash_splitkv_fwd<Flash_fwd_kernel_traits<Headdim, kBlockM, 64, 4, false, false, T>, Is_causal>(params, stream);
+        } else {
+          constexpr static int kBlockN = Headdim <= 64 ? 256 : (Headdim <= 128 ? 128 : 64);
+          run_flash_splitkv_fwd<Flash_fwd_kernel_traits<Headdim, kBlockM, kBlockN, 4, false, false, T>, Is_causal>(params, stream);
+        }
+    });
+#else
     constexpr static int kBlockN = Headdim <= 64 ? 256 : (Headdim <= 128 ? 128 : 64);
     run_flash_splitkv_fwd<Flash_fwd_kernel_traits<Headdim, kBlockM, kBlockN, 4, false, false, T>, Is_causal>(params, stream);
+#endif
 }
 
 template<typename T, bool Is_causal>

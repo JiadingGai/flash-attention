@@ -1473,6 +1473,415 @@ mha_fwd_kvcache(at::Tensor &q,                 // batch_size x seqlen_q x num_he
     }
     return {out, softmax_lse};
 }
+
+void print_params_bifurcated(const Flash_fwd_params params) {
+    std::cout << "(BIFURCATEDATTENTION) ====================================== Params ======================================" << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.q_ptr                   = " << params.q_ptr << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.k_ptr                   = " << params.k_ptr << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.v_ptr                   = " << params.v_ptr << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.kcontext_ptr            = " << params.kcontext_ptr << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.vcontext_ptr            = " << params.vcontext_ptr << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.kdecoded_ptr            = " << params.kdecoded_ptr << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.vdecoded_ptr            = " << params.vdecoded_ptr << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.knew_ptr                = " << params.knew_ptr << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.vnew_ptr                = " << params.vnew_ptr << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.q_batch_stride          = " << params.q_batch_stride << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.q_row_stride            = " << params.q_row_stride << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.q_head_stride           = " << params.q_head_stride << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.k_batch_stride          = " << params.k_batch_stride << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.k_row_stride            = " << params.k_row_stride << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.k_head_stride           = " << params.k_head_stride << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.v_batch_stride          = " << params.v_batch_stride << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.v_row_stride            = " << params.v_row_stride << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.v_head_stride           = " << params.v_head_stride << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.o_batch_stride          = " << params.o_batch_stride << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.o_row_stride            = " << params.o_row_stride << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.o_head_stride           = " << params.o_head_stride << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.knew_batch_stride          = " << params.knew_batch_stride << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.knew_row_stride            = " << params.knew_row_stride << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.knew_head_stride           = " << params.knew_head_stride << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.seqlen_q                = " << params.seqlen_q << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.cu_seqlens_q            = " << params.cu_seqlens_q << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.seqlen_k                = " << params.seqlen_k << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.cu_seqlens_k            = " << params.cu_seqlens_k << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.cu_seqlens_k_context    = " << params.cu_seqlens_k_context << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.cu_seqlens_k_decoded    = " << params.cu_seqlens_k_decoded << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.d                       = " << params.d << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.leftpad_k               = " << params.leftpad_k << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.h_h_k_ratio             = " << params.h_h_k_ratio << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.is_seqlens_k_cumulative = " << params.is_seqlens_k_cumulative << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.unpadded_lse = " << params.unpadded_lse << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.kcontext_batch_stride = " << params.kcontext_batch_stride << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.kcontext_row_stride = " << params.kcontext_row_stride << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.kcontext_head_stride = " << params.kcontext_head_stride << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.vcontext_batch_stride = " << params.vcontext_batch_stride << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.vcontext_row_stride = " << params.vcontext_row_stride << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.vcontext_head_stride = " << params.vcontext_head_stride << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.kdecoded_batch_stride = " << params.kdecoded_batch_stride << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.kdecoded_row_stride = " << params.kdecoded_row_stride << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.kdecoded_head_stride = " << params.kdecoded_head_stride << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.vdecoded_batch_stride = " << params.vdecoded_batch_stride << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.vdecoded_row_stride = " << params.vdecoded_row_stride << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.vdecoded_head_stride = " << params.vdecoded_head_stride << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.seqlen_k_context = " << params.seqlen_k_context << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.seqlen_k_decoded = " << params.seqlen_k_decoded << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.num_splits = " << params.num_splits << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.cache_batch_idx = " << params.cache_batch_idx << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.use_bifurcated_attention = " << params.use_bifurcated_attention << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) params.is_causal = " << params.is_causal << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) ====================================== Params ======================================" << std::endl;
+}
+
+std::vector<at::Tensor>
+mha_fwd_kvcache_bifurcated(at::Tensor &q,            // batch_size x seqlen_q x num_heads x head_size
+                const at::Tensor &kcache_decoded,    // batch_size_c x seqlen_k_decoded x num_heads_k x head_size or num_blocks x page_block_size x num_heads_k x head_size if there's a block_table.
+                const at::Tensor &vcache_decoded,    // batch_size_c x seqlen_k_decoded x num_heads_k x head_size or num_blocks x page_block_size x num_heads_k x head_size if there's a block_table.
+                const at::Tensor &kcache_context,    // 1 x seqlen_context x num_heads_k x head_size or num_blocks x page_block_size x num_heads_k x head_size if there's a block_table.
+                const at::Tensor &vcache_context,    // 1 x seqlen_context x num_heads_k x head_size or num_blocks x page_block_size x num_heads_k x head_size if there's a block_table.
+                c10::optional<const at::Tensor> &k_, // batch_size x seqlen_knew x num_heads_k x head_size
+                c10::optional<const at::Tensor> &v_, // batch_size x seqlen_knew x num_heads_k x head_size
+                c10::optional<const at::Tensor> &seqlens_k_, // batch_size
+                c10::optional<const at::Tensor> &seqlens_k_context_, // batch_size
+                c10::optional<const at::Tensor> &seqlens_k_decoded_, // batch_size
+                c10::optional<const at::Tensor> &rotary_cos_, // seqlen_ro x (rotary_dim / 2)
+                c10::optional<const at::Tensor> &rotary_sin_, // seqlen_ro x (rotary_dim / 2)
+                c10::optional<const at::Tensor> &cache_batch_idx_, // indices to index into the KV cache
+                c10::optional<const at::Tensor> &leftpad_k_, // batch_size
+                c10::optional<at::Tensor> &block_table_, // batch_size x max_num_blocks_per_seq
+                c10::optional<at::Tensor> &alibi_slopes_, // num_heads or batch_size x num_heads
+                c10::optional<at::Tensor> &out_,             // batch_size x seqlen_q x num_heads x head_size
+                const float softmax_scale,
+                bool is_causal,
+                int window_size_left,
+                int window_size_right,
+                const float softcap,
+                bool is_rotary_interleaved,   // if true, rotary combines indices 0 & 1, else indices 0 & rotary_dim / 2
+                int num_splits,
+                bool use_bifurcated_attention
+                ) {
+
+    // Otherwise the kernel will be launched from cuda:0 device
+    at::cuda::CUDAGuard device_guard{q.device()};
+
+    auto [cc_major, cc_minor] = get_compute_capability(get_current_device());
+    bool is_sm8x_min = cc_major >= 8;
+    TORCH_CHECK(is_sm8x_min, "FlashAttention only supports Ampere GPUs or newer.");
+
+    auto q_dtype = q.dtype();
+    TORCH_CHECK(q_dtype == torch::kFloat16 || q_dtype == torch::kBFloat16,
+                "FlashAttention only support fp16 and bf16 data type");
+    TORCH_CHECK(kcache_decoded.dtype() == q_dtype, "query and key must have the same dtype");
+    TORCH_CHECK(kcache_context.dtype() == q_dtype, "query and key must have the same dtype");
+    TORCH_CHECK(vcache_decoded.dtype() == q_dtype, "query and value must have the same dtype");
+    TORCH_CHECK(vcache_context.dtype() == q_dtype, "query and value must have the same dtype");
+
+    CHECK_DEVICE(q);
+    CHECK_DEVICE(kcache_decoded); CHECK_DEVICE(kcache_context);
+    CHECK_DEVICE(vcache_decoded); CHECK_DEVICE(vcache_context);
+
+    TORCH_CHECK(q.stride(-1) == 1, "Input tensor must have contiguous last dimension");
+    TORCH_CHECK(kcache_context.stride(-1) == 1, "Input tensor must have contiguous last dimension");
+    TORCH_CHECK(kcache_decoded.stride(-1) == 1, "Input tensor must have contiguous last dimension");
+    TORCH_CHECK(vcache_context.stride(-1) == 1, "Input tensor must have contiguous last dimension");
+    TORCH_CHECK(vcache_decoded.stride(-1) == 1, "Input tensor must have contiguous last dimension");
+
+    at::Tensor block_table;
+    const bool paged_KV = block_table_.has_value();
+    assert(!paged_KV && "bifurcated flash attenion does not support paging yet.");
+    if (paged_KV) {
+        TORCH_CHECK(!cache_batch_idx_.has_value(), "Paged KVcache does not support cache_batch_idx");
+        block_table = block_table_.value();
+        CHECK_DEVICE(block_table);
+        TORCH_CHECK(block_table.dtype() == torch::kInt32, "block_table must have dtype torch.int32");
+        TORCH_CHECK(block_table.stride(-1) == 1, "block_table must have contiguous last dimension");
+    }
+
+    const auto sizes = q.sizes();
+
+    const int batch_size = sizes[0];
+    int seqlen_q = sizes[1];
+    int num_heads = sizes[2];
+    const int head_size_og = sizes[3];
+
+    const int max_num_blocks_per_seq = !paged_KV ? 0 : block_table.size(1);
+    const int num_blocks = !paged_KV ? 0 : kcache_context.size(0);
+    const int page_block_size = !paged_KV ? 1 : kcache_context.size(1);
+    TORCH_CHECK(!paged_KV || page_block_size % 256 == 0, "Paged KV cache block size must be divisible by 256");
+    const int seqlen_k = !paged_KV ? (kcache_context.size(1) + kcache_decoded.size(1)): max_num_blocks_per_seq * page_block_size;
+    const int num_heads_k = kcache_context.size(2);
+    const int batch_size_c = !paged_KV ? kcache_context.size(0) : batch_size;
+    TORCH_CHECK(batch_size > 0, "batch size must be positive");
+    TORCH_CHECK(head_size_og <= 256, "FlashAttention forward only supports head dimension at most 256");
+    TORCH_CHECK(num_heads % num_heads_k == 0, "Number of heads in key/value must divide number of heads in query");
+
+    // causal=true is the same as causal=false in this case
+    if (seqlen_q == 1 && !alibi_slopes_.has_value()) { is_causal = false; }
+    if (is_causal) { window_size_right = 0; }
+
+    // Faster to transpose q from (b, 1, (nheads_kv ngroups), d) to (b, ngroups, nheads_kv, d) in this case
+    // H/t Daniel Haziza
+    const int seqlenq_ngroups_swapped = seqlen_q == 1 && num_heads > num_heads_k && window_size_left < 0 && window_size_right < 0 && head_size_og % 8 == 0 && !alibi_slopes_.has_value();
+    if (seqlenq_ngroups_swapped) {
+        const int ngroups = num_heads / num_heads_k;
+        q = q.reshape({batch_size, num_heads_k, ngroups, head_size_og}).transpose(1, 2);
+        seqlen_q = ngroups;
+        num_heads = num_heads_k;
+    }
+
+    if (window_size_left >= seqlen_k) { window_size_left = -1; }
+    if (window_size_right >= seqlen_k) { window_size_right = -1; }
+
+    CHECK_SHAPE(q, batch_size, seqlen_q, num_heads, head_size_og);
+    if (!paged_KV) {
+        // FIXME(jiadingg): check shape for context and decoded
+        /* CHECK_SHAPE(kcache, batch_size_c, seqlen_k, num_heads_k, head_size_og); */
+        /* CHECK_SHAPE(vcache, batch_size_c, seqlen_k, num_heads_k, head_size_og); */
+    } else {
+        /* CHECK_SHAPE(kcache, num_blocks, page_block_size, num_heads_k, head_size_og); */
+        /* CHECK_SHAPE(vcache, num_blocks, page_block_size, num_heads_k, head_size_og); */
+        CHECK_SHAPE(block_table, batch_size, max_num_blocks_per_seq);
+    }
+
+    at::Tensor q_padded, kcache_padded, vcache_padded;
+    if (head_size_og % 8 != 0) {
+        assert(false && "bifurcated flash attention is not tested for non-multiple-of-8 head size.");
+        // q_padded = torch::nn::functional::pad(q, torch::nn::functional::PadFuncOptions({0, 8 - head_size_og % 8}));
+        // kcache_padded = torch::nn::functional::pad(kcache, torch::nn::functional::PadFuncOptions({0, 8 - head_size_og % 8}));
+        // vcache_padded = torch::nn::functional::pad(vcache, torch::nn::functional::PadFuncOptions({0, 8 - head_size_og % 8}));
+    } else {
+        q_padded = q;
+        kcache_padded = kcache_context;
+        vcache_padded = vcache_context;
+    }
+
+    at::Tensor out;
+    if (out_.has_value()) {
+        out = out_.value();
+        TORCH_CHECK(out.dtype() == q_dtype, "Output must have the same dtype as inputs");
+        CHECK_DEVICE(out);
+        TORCH_CHECK(out.stride(-1) == 1, "Output tensor must have contiguous last dimension");
+        CHECK_SHAPE(out, batch_size, seqlen_q, num_heads, head_size_og);
+        if (head_size_og % 8 != 0) { out = torch::empty_like(q_padded); }
+    } else {
+        out = torch::empty_like(q_padded);
+    }
+
+    auto round_multiple = [](int x, int m) { return (x + m - 1) / m * m; };
+    const int head_size = round_multiple(head_size_og, 8);
+    const int head_size_rounded = head_size <= 192 ? round_multiple(head_size, 32) : 256;
+    const int seqlen_q_rounded = round_multiple(seqlen_q, 128);
+    const int seqlen_k_rounded = round_multiple(seqlen_k, 128);
+
+    auto opts = q.options();
+
+    auto softmax_lse = torch::empty({batch_size, num_heads, seqlen_q}, opts.dtype(at::kFloat));
+
+   Flash_fwd_params params;
+   set_params_fprop(params,
+                     batch_size,
+                     seqlen_q, seqlen_k,
+                     seqlen_q_rounded, seqlen_k_rounded,
+                     num_heads, num_heads_k,
+                     head_size, head_size_rounded,
+                     q_padded, kcache_padded, vcache_padded, out,
+                     /*cu_seqlens_q_d=*/nullptr,
+                     /*cu_seqlens_k_d=*/nullptr,
+                     /*seqused_k=*/nullptr,
+                     /*p_ptr=*/nullptr,
+                     softmax_lse.data_ptr(),
+                     /*p_dropout=*/0.f,
+                     softmax_scale,
+                     window_size_left,
+                     window_size_right,
+                     softcap
+                     );
+
+    // BIFURCATEDATTENTION:
+#ifdef BIFURCATED_ATTENTION_DEBUG
+    std::cout << "(BIFURCATEDATTENTION) q_padded.shape = " << q_padded.sizes() << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) kcache.shape = " << kcache_padded.sizes() << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) vcache.shape = " << vcache_padded.sizes() << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) kcache_context.shape = " << kcache_context.sizes() << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) vcache_context.shape = " << vcache_context.sizes() << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) kcache_decoded.shape = " << kcache_decoded.sizes() << std::endl;
+    std::cout << "(BIFURCATEDATTENTION) vcache_decoded.shape = " << vcache_decoded.sizes() << std::endl;
+#endif
+
+    params.use_bifurcated_attention = use_bifurcated_attention;
+    params.kcontext_ptr = kcache_context.data_ptr();
+    params.vcontext_ptr = vcache_context.data_ptr();
+    params.kdecoded_ptr = kcache_decoded.data_ptr();
+    params.vdecoded_ptr = vcache_decoded.data_ptr();
+
+    // All stride are in elements, not bytes.
+    params.kcontext_batch_stride = kcache_context.stride(0);
+    params.vcontext_batch_stride = vcache_context.stride(0);
+    params.kcontext_row_stride = kcache_context.stride(-3);
+    params.vcontext_row_stride = vcache_context.stride(-3);
+    params.kcontext_head_stride = kcache_context.stride(-2);
+    params.vcontext_head_stride = vcache_context.stride(-2);
+
+    params.kdecoded_batch_stride = kcache_decoded.stride(0);
+    params.vdecoded_batch_stride = vcache_decoded.stride(0);
+    params.kdecoded_row_stride = kcache_decoded.stride(-3);
+    params.vdecoded_row_stride = vcache_decoded.stride(-3);
+    params.kdecoded_head_stride = kcache_decoded.stride(-2);
+    params.vdecoded_head_stride = vcache_decoded.stride(-2);
+
+    params.seqlen_k_context = kcache_context.size(1);
+    params.seqlen_k_decoded = kcache_decoded.size(1);
+    //FIXME: overwriting seqlen_k by adding context and decoded len. danger!
+    params.seqlen_k = params.seqlen_k_context + params.seqlen_k_decoded;
+    // BIFURCATEDATTENTION: end of context params setup
+
+    at::Tensor k, v, k_padded, v_padded;
+    if (k_.has_value()) {
+        TORCH_CHECK(v_.has_value(), "If key is supplied, value must also be passed in");
+        //FIXME(jiadingg): remove TORCH_CHECK for seqlens_k_.
+        //TORCH_CHECK(seqlens_k_.has_value(), "If key is supplied, seqlens_k must also be passed in");
+        TORCH_CHECK(seqlens_k_context_.has_value(), "If key is supplied, seqlens_k_context_ must also be passed in");
+        TORCH_CHECK(seqlens_k_decoded_.has_value(), "If key is supplied, seqlens_k_decoded_ must also be passed in");
+        /* std::cout << "(BIFURCATEDATTENTION) seqlens_k_ = " << seqlens_k_.value() << std::endl; */
+        TORCH_CHECK(seqlen_q <= seqlen_k, "If key is supplied, it must have seqlen <= the seqlen of the KV cache");
+        k = k_.value();
+        v = v_.value();
+        TORCH_CHECK(k.dtype() == q_dtype, "Key must have the same dtype as query");
+        TORCH_CHECK(v.dtype() == q_dtype, "Value must have the same dtype as query");
+        CHECK_DEVICE(k); CHECK_DEVICE(v);
+        TORCH_CHECK(k.stride(-1) == 1, "Key tensor must have contiguous last dimension");
+        TORCH_CHECK(v.stride(-1) == 1, "Value tensor must have contiguous last dimension");
+        int seqlen_knew = k.size(1);
+        CHECK_SHAPE(k, batch_size, seqlen_knew, num_heads_k, head_size_og);
+        CHECK_SHAPE(v, batch_size, seqlen_knew, num_heads_k, head_size_og);
+        if (head_size_og % 8 != 0) {
+            k_padded = torch::nn::functional::pad(k, torch::nn::functional::PadFuncOptions({0, 8 - head_size_og % 8}));
+            v_padded = torch::nn::functional::pad(v, torch::nn::functional::PadFuncOptions({0, 8 - head_size_og % 8}));
+        } else {
+            k_padded = k;
+            v_padded = v;
+        }
+        params.seqlen_knew = seqlen_knew;
+        params.knew_ptr = k_padded.data_ptr();
+        params.vnew_ptr = v_padded.data_ptr();
+        // All stride are in elements, not bytes.
+        params.knew_batch_stride = k_padded.stride(0);
+        params.vnew_batch_stride = v_padded.stride(0);
+        params.knew_row_stride = k_padded.stride(-3);
+        params.vnew_row_stride = v_padded.stride(-3);
+        params.knew_head_stride = k_padded.stride(-2);
+        params.vnew_head_stride = v_padded.stride(-2);
+    }
+
+    //if (seqlens_k_.has_value()) {
+    //    auto seqlens_k = seqlens_k_.value();
+    //    TORCH_CHECK(seqlens_k.dtype() == torch::kInt32, "seqlens_k must have dtype int32");
+    //    CHECK_DEVICE(seqlens_k);
+    //    CHECK_CONTIGUOUS(seqlens_k);
+    //    CHECK_SHAPE(seqlens_k, batch_size);
+    //    params.cu_seqlens_k = static_cast<int *>(seqlens_k.data_ptr());
+    //}
+    if (seqlens_k_context_.has_value()) {
+        auto seqlens_k_context = seqlens_k_context_.value();
+        TORCH_CHECK(seqlens_k_context.dtype() == torch::kInt32, "seqlens_k must have dtype int32");
+        CHECK_DEVICE(seqlens_k_context);
+        CHECK_CONTIGUOUS(seqlens_k_context);
+        CHECK_SHAPE(seqlens_k_context, batch_size);
+        params.cu_seqlens_k_context = static_cast<int *>(seqlens_k_context.data_ptr());
+
+        assert(seqlens_k_decoded_.has_value() &&
+               "actual cache seqlens for context and decoded kv cache must be provided in lock step.");
+        auto seqlens_k_decoded = seqlens_k_decoded_.value();
+        TORCH_CHECK(seqlens_k_decoded.dtype() == torch::kInt32, "seqlens_k must have dtype int32");
+        CHECK_DEVICE(seqlens_k_decoded);
+        CHECK_CONTIGUOUS(seqlens_k_decoded);
+        CHECK_SHAPE(seqlens_k_decoded, batch_size);
+        params.cu_seqlens_k_decoded = static_cast<int *>(seqlens_k_decoded.data_ptr());
+    }
+    params.is_seqlens_k_cumulative = !(seqlens_k_context_.has_value());
+    if (leftpad_k_.has_value()) {
+        TORCH_CHECK(!paged_KV, "We don't support Paged KV and leftpad_k running at the same time yet");
+        auto leftpad_k = leftpad_k_.value();
+        TORCH_CHECK(leftpad_k.dtype() == torch::kInt32, "leftpad_k must have dtype int32");
+        CHECK_DEVICE(leftpad_k);
+        CHECK_CONTIGUOUS(leftpad_k);
+        CHECK_SHAPE(leftpad_k, batch_size);
+        params.leftpad_k = static_cast<int *>(leftpad_k.data_ptr());
+    }
+
+    if (rotary_cos_.has_value()) {
+        TORCH_CHECK(k_.has_value(), "If rotary cos/sin are provided, new key / value to be appended to KV cache must also be provided");
+        auto rotary_cos = rotary_cos_.value();
+        CHECK_DEVICE(rotary_cos);
+        params.rotary_dim = rotary_cos.size(1) * 2;
+        TORCH_CHECK(params.rotary_dim <= head_size, "rotary_dim must be <= headdim");
+        TORCH_CHECK(params.rotary_dim % 16 == 0, "Only rotary dimensions divisible by 16 are currently supported");
+        const int seqlen_ro = rotary_cos.size(0);
+        TORCH_CHECK(seqlen_ro >= seqlen_k, "cos/sin seqlen must be at least the seqlen of KV cache");
+        CHECK_SHAPE(rotary_cos, seqlen_ro, params.rotary_dim / 2);
+        CHECK_CONTIGUOUS(rotary_cos);
+        TORCH_CHECK(rotary_cos.scalar_type() == q_dtype, "rotary_cos must have the same dtype as query");
+
+        TORCH_CHECK(rotary_sin_.has_value(), "If rotary cos is provided, rotary sin must also be provided");
+        auto rotary_sin = rotary_sin_.value();
+        CHECK_DEVICE(rotary_sin);
+        CHECK_SHAPE(rotary_sin, seqlen_ro, params.rotary_dim / 2);
+        CHECK_CONTIGUOUS(rotary_sin);
+        TORCH_CHECK(rotary_sin.scalar_type() == q_dtype, "rotary_cos must have the same dtype as query");
+        params.rotary_cos_ptr = rotary_cos.data_ptr();
+        params.rotary_sin_ptr = rotary_sin.data_ptr();
+        params.is_rotary_interleaved = is_rotary_interleaved;
+    } else {
+        params.rotary_dim = 0;
+    }
+
+    if (cache_batch_idx_.has_value()) {
+        auto cache_batch_idx = cache_batch_idx_.value();
+        CHECK_DEVICE(cache_batch_idx);
+        CHECK_CONTIGUOUS(cache_batch_idx);
+        TORCH_CHECK(cache_batch_idx.scalar_type() == torch::kInt32, "cache_batch_idx must have dtype int32");
+        params.cache_batch_idx = reinterpret_cast<int *>(cache_batch_idx.data_ptr());
+    }
+
+    // Keep references to these tensors to extend their lifetime
+    at::Tensor softmax_lse_accum, out_accum;
+    std::tie(softmax_lse_accum, out_accum) = set_params_splitkv(
+        params, batch_size, num_heads, head_size, seqlen_k, seqlen_q,
+        head_size_rounded, /*dropout*/ 0.f, num_splits, get_num_sm(get_current_device()), opts);
+
+    if (paged_KV) {
+        params.block_table = block_table.data_ptr<int>();
+        params.block_table_batch_stride = block_table.stride(0);
+    }
+    params.page_block_size = page_block_size;
+
+
+    set_params_alibi(params, alibi_slopes_, batch_size, num_heads);
+
+    //print_params_bifurcated(params);
+
+    auto stream = at::cuda::getCurrentCUDAStream().stream();
+    // Only split kernel supports appending to KV cache, or indexing to the cache with cache_batch_idx,
+    // or paged KV cache
+    run_mha_fwd(params, stream, /*force_split_kernel=*/k_.has_value() || cache_batch_idx_.has_value() || paged_KV);
+
+    if (head_size_og % 8 != 0) {
+        assert(false && "bifurcated flash attention is not tested for non-multiple-of-8 head size.");
+        //out = out.index({"...", torch::indexing::Slice(torch::indexing::None, head_size_og)});
+        //if (out_.has_value()) { out_.value().copy_(out); }
+        //if (k_.has_value()) {
+        //    // It's expensive to copy the KV cache here for the case where head size not divisible by 8,
+        //    // but we don't expect to get this case in practice. This is just so that the code works for that case.
+        //    kcache.copy_(kcache_padded.index({"...", torch::indexing::Slice(torch::indexing::None, head_size_og)}));
+        //    vcache.copy_(vcache_padded.index({"...", torch::indexing::Slice(torch::indexing::None, head_size_og)}));
+        //}
+    }
+
+    if (seqlenq_ngroups_swapped) {
+        out = out.transpose(1, 2).reshape({batch_size, 1, num_heads_k * seqlen_q, head_size_og});
+        softmax_lse = softmax_lse.reshape({batch_size, num_heads_k * seqlen_q, 1});
+    }
+    return {out, softmax_lse};
+}
 } // namespace FLASH_NAMESPACE
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
@@ -1482,4 +1891,5 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("bwd", &FLASH_NAMESPACE::mha_bwd, "Backward pass");
     m.def("varlen_bwd", &FLASH_NAMESPACE::mha_varlen_bwd, "Backward pass (variable length)");
     m.def("fwd_kvcache", &FLASH_NAMESPACE::mha_fwd_kvcache, "Forward pass, with KV-cache");
+    m.def("fwd_kvcache_bifurcated", &FLASH_NAMESPACE::mha_fwd_kvcache_bifurcated, "Forward pass, with KV-cache and bifurcated attention");
 }

@@ -46,6 +46,32 @@ struct Qkv_params {
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 struct Flash_fwd_params : public Qkv_params {
+    /* where to enable bifurcated attention in flash attention*/
+    bool use_bifurcated_attention;
+
+    // The k,v context (bifur)
+    void *__restrict__ kcontext_ptr;
+    void *__restrict__ vcontext_ptr;
+
+    // The k,v decoded (bifur)
+    void *__restrict__ kdecoded_ptr;
+    void *__restrict__ vdecoded_ptr;
+
+    // The stride between rows of the Q, K and V context matrices.
+    index_t kcontext_batch_stride;
+    index_t vcontext_batch_stride;
+    index_t kcontext_row_stride;
+    index_t vcontext_row_stride;
+    index_t kcontext_head_stride;
+    index_t vcontext_head_stride;
+
+    // The stride between rows of the Q, K and V decoded matrices.
+    index_t kdecoded_batch_stride;
+    index_t vdecoded_batch_stride;
+    index_t kdecoded_row_stride;
+    index_t vdecoded_row_stride;
+    index_t kdecoded_head_stride;
+    index_t vdecoded_head_stride;
 
     // The O matrix (output).
     void * __restrict__ o_ptr;
@@ -65,6 +91,8 @@ struct Flash_fwd_params : public Qkv_params {
 
     // The dimensions.
     int b, seqlen_q, seqlen_k, seqlen_knew, d, seqlen_q_rounded, seqlen_k_rounded, d_rounded, rotary_dim, total_q;
+    int seqlen_k_context;
+    int seqlen_k_decoded;
 
     // The scaling factors for the kernel.
     float scale_softmax;
@@ -73,6 +101,9 @@ struct Flash_fwd_params : public Qkv_params {
     // array of length b+1 holding starting offset of each sequence.
     int * __restrict__ cu_seqlens_q;
     int * __restrict__ cu_seqlens_k;
+    // FIXME(jiadingg): refactor Flash_fwd_params to Flash_fwd_bifurcated_params! 
+    int * __restrict__ cu_seqlens_k_context;
+    int * __restrict__ cu_seqlens_k_decoded;
     int * __restrict__ leftpad_k;
 
     // If provided, the actual length of each k sequence.
